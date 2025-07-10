@@ -1,3 +1,5 @@
+// Package main implements the signing service challenge application.
+// This service provides a REST API for managing cryptographic signing devices.
 package main
 
 import (

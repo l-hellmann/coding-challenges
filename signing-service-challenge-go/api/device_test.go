@@ -1,3 +1,4 @@
+// Package api contains integration tests for the device API endpoints
 package api
 
 import (
@@ -28,10 +29,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TypedResponse wraps API responses with a data field
 type TypedResponse[T any] struct {
 	Data T `json:"data"`
 }
 
+// makeRequest is a helper function to create and execute HTTP requests for testing
 func makeRequest(
 	assert *require.Assertions,
 	inputDto any,
@@ -66,6 +69,7 @@ func makeRequest(
 	return res
 }
 
+// createDevice is a helper function to create a new device for testing
 func createDevice(
 	assert *require.Assertions,
 	api http.Handler,
@@ -87,6 +91,7 @@ func createDevice(
 	return deviceDto.Data
 }
 
+// validateSignature verifies that a signature is valid for the given device and data
 func validateSignature(
 	assert *require.Assertions,
 	signDto PutDeviceSignOutputDto,
@@ -122,6 +127,7 @@ func validateSignature(
 
 }
 
+// TestPostDevice verifies that creating a new device works correctly
 func TestPostDevice(t *testing.T) {
 	assert := require.New(t)
 
@@ -152,12 +158,17 @@ func TestPostDevice(t *testing.T) {
 	assert.Greater(len(out.Data.PublicKeys), 0)
 }
 
+// TestPostDeviceBadRequest verifies that invalid device creation requests are rejected
+// This test covers multiple invalid scenarios to ensure proper input validation
 func TestPostDeviceBadRequest(t *testing.T) {
 	assert := require.New(t)
 
 	storage := persistence.NewMemoryStorage()
 	locker := lock.NewMemoryLocker[uuid.UUID]()
 	api := NewServer(storage, locker).mux()
+
+	// Test case 1: Completely empty request body (nil input)
+	// Should return 400 Bad Request because no data was provided
 	{
 		var out ErrorResponse
 		response := makeRequest(
@@ -170,6 +181,9 @@ func TestPostDeviceBadRequest(t *testing.T) {
 		)
 		assert.Equal(http.StatusBadRequest, response.Code)
 	}
+
+	// Test case 2: Empty DTO with no required fields
+	// Should return 400 Bad Request because SigningAlgorithm is required
 	{
 		var out ErrorResponse
 		response := makeRequest(
@@ -182,6 +196,9 @@ func TestPostDeviceBadRequest(t *testing.T) {
 		)
 		assert.Equal(http.StatusBadRequest, response.Code)
 	}
+
+	// Test case 3: An invalid ID format provided
+	// Should return 400 Bad Request because ID should be auto-generated, not provided
 	{
 		var out ErrorResponse
 		response := makeRequest(
@@ -197,12 +214,15 @@ func TestPostDeviceBadRequest(t *testing.T) {
 		)
 		assert.Equal(http.StatusBadRequest, response.Code)
 	}
+
+	// Test case 4: Invalid signing algorithm
+	// Should return 400 Bad Request because "foo" is not a valid signing algorithm
 	{
 		var out ErrorResponse
 		response := makeRequest(
 			assert,
 			PostDeviceInputDto{
-				SigningAlgorithm: "usa",
+				SigningAlgorithm: "foo",
 			},
 			http.MethodPost,
 			"/api/v0/device",
@@ -214,6 +234,8 @@ func TestPostDeviceBadRequest(t *testing.T) {
 
 }
 
+// TestSignBasic verifies that basic signing functionality works correctly
+// This test covers the core signing workflow and signature chaining mechanism
 func TestSignBasic(t *testing.T) {
 	assert := require.New(t)
 
@@ -221,12 +243,14 @@ func TestSignBasic(t *testing.T) {
 	locker := lock.NewMemoryLocker[uuid.UUID]()
 	api := NewServer(storage, locker).mux()
 
+	// Create a test device with RSA signing algorithm
 	device := createDevice(
 		assert,
 		api,
 		domain.SigningAlgorithmRsa,
 	)
 
+	// First signing operation - tests initial signature creation
 	var firstSignDto TypedResponse[PutDeviceSignOutputDto]
 	{
 		signResponse := makeRequest(
@@ -241,10 +265,12 @@ func TestSignBasic(t *testing.T) {
 		)
 		assert.Equal(http.StatusOK, signResponse.Code)
 
+		// Parse the signed data format: "counter_deviceId_originalData"
 		parts := strings.SplitN(firstSignDto.Data.SignedData, "_", 3)
 		assert.Len(parts, 3)
-		assert.Equal("1", parts[0])
+		assert.Equal("1", parts[0]) // First signature should have counter = 1
 
+		// Verify the device ID is correctly embedded in the signed data
 		deviceIdBytes, err := base64.StdEncoding.DecodeString(parts[1])
 		assert.NoError(err)
 
@@ -252,12 +278,15 @@ func TestSignBasic(t *testing.T) {
 		assert.NoError(err)
 		assert.Equal(deviceId.String(), device.Id)
 
+		// Cryptographically validate that the signature is correct
 		validateSignature(
 			assert,
 			firstSignDto.Data,
 			device,
 		)
 	}
+
+	// Second signing operation - tests signature chaining
 	{
 		var signDto TypedResponse[PutDeviceSignOutputDto]
 		signResponse := makeRequest(
@@ -271,11 +300,16 @@ func TestSignBasic(t *testing.T) {
 			&signDto,
 		)
 		assert.Equal(http.StatusOK, signResponse.Code)
+
+		// Parse the signed data for the second signature
 		parts := strings.SplitN(signDto.Data.SignedData, "_", 3)
 		assert.Len(parts, 3)
-		assert.Equal("2", parts[0])
+		assert.Equal("2", parts[0]) // Second signature should have counter = 2
+
+		// Verify signature chaining: second signature should include first signature
 		assert.Equal(firstSignDto.Data.Signature, parts[1])
 
+		// Cryptographically validate the second signature
 		validateSignature(
 			assert,
 			signDto.Data,
@@ -284,6 +318,8 @@ func TestSignBasic(t *testing.T) {
 	}
 }
 
+// TestSignEmpty verifies that signing empty data returns no content
+// This test ensures the API handles edge cases properly when no data is provided to sign
 func TestSignEmpty(t *testing.T) {
 	assert := require.New(t)
 
@@ -291,39 +327,48 @@ func TestSignEmpty(t *testing.T) {
 	locker := lock.NewMemoryLocker[uuid.UUID]()
 	api := NewServer(storage, locker).mux()
 
+	// Create a test device with ECC signing algorithm
 	device := createDevice(
 		assert,
 		api,
 		domain.SigningAlgorithmEcc,
 	)
 
+	// Attempt to sign empty data
 	signResponse := makeRequest(
 		assert,
 		PutDeviceSignInputDto{
-			Data: "",
+			Data: "", // Empty string input
 		},
 		http.MethodPut,
 		fmt.Sprintf("/api/v0/device/%s/sign", device.Id),
 		api,
-		nil,
+		nil, // No output expected for 204 response
 	)
+
+	// Should return 204 No Content since there's nothing to sign
 	assert.Equal(http.StatusNoContent, signResponse.Code)
 }
 
+// TestSignConcurrent verifies that concurrent signing operations work correctly and maintain signature counter
+// This test is crucial for validating the locking mechanism and ensuring thread safety
 func TestSignConcurrent(t *testing.T) {
-	const runs = 25
+	const runs = 25 // Number of concurrent signing operations
 	assert := require.New(t)
 
 	storage := persistence.NewMemoryStorage()
-	locker := lock.NewMemoryLocker[uuid.UUID]()
+	locker := lock.NewMemoryLocker[uuid.UUID]() // Memory-based locking for concurrency control
 	api := NewServer(storage, locker).mux()
 
+	// Create a test device with ECC signing algorithm
 	device := createDevice(
 		assert,
 		api,
 		domain.SigningAlgorithmEcc,
 	)
 
+	// Helper function to generate random data for each signing operation
+	// This ensures each goroutine signs different data
 	generateData := func() string {
 		buf := make([]byte, 512)
 		n, err := io.ReadFull(rand.Reader, buf)
@@ -332,12 +377,15 @@ func TestSignConcurrent(t *testing.T) {
 		return string(buf)
 	}
 
+	// Launch multiple goroutines to perform concurrent signing operations
 	wg := sync.WaitGroup{}
 	wg.Add(runs)
 	for i := 0; i < runs; i++ {
 		go func() {
 			defer wg.Done()
 			var signDto TypedResponse[PutDeviceSignOutputDto]
+
+			// Each goroutine makes a signing request with unique random data
 			signResponse := makeRequest(
 				assert,
 				PutDeviceSignInputDto{
@@ -350,6 +398,7 @@ func TestSignConcurrent(t *testing.T) {
 			)
 			assert.Equal(http.StatusOK, signResponse.Code)
 
+			// Validate that each signature is cryptographically correct
 			validateSignature(
 				assert,
 				signDto.Data,
@@ -357,72 +406,14 @@ func TestSignConcurrent(t *testing.T) {
 			)
 		}()
 	}
+
+	// Wait for all goroutines to complete
 	wg.Wait()
 
-	deviceId, err := uuid.Parse(device.Id)
-	assert.NoError(err)
-	d, err := storage.Devices().GetByID(t.Context(), deviceId)
-	assert.NoError(err)
-	assert.Equal(25, d.SignatureCounter)
-}
-
-func TestSignBadRequest(t *testing.T) {
-	assert := require.New(t)
-
-	storage := persistence.NewMemoryStorage()
-	locker := lock.NewMemoryLocker[uuid.UUID]()
-	api := NewServer(storage, locker).mux()
-
-	var out ErrorResponse
-	signResponse := makeRequest(
-		assert,
-		PutDeviceSignInputDto{
-			Data: "foo",
-		},
-		http.MethodPut,
-		"/api/v0/device/invalid-uuid/sign",
-		api,
-		&out,
-	)
-	assert.Equal(http.StatusBadRequest, signResponse.Code)
-}
-
-func TestSignNotFound(t *testing.T) {
-	assert := require.New(t)
-
-	storage := persistence.NewMemoryStorage()
-	locker := lock.NewMemoryLocker[uuid.UUID]()
-	api := NewServer(storage, locker).mux()
-
-	var out ErrorResponse
-	signResponse := makeRequest(
-		assert,
-		PutDeviceSignInputDto{
-			Data: "bar",
-		},
-		http.MethodPut,
-		"/api/v0/device/993d8948-cb1b-4ce8-98f8-f8b866578faf/sign",
-		api,
-		&out,
-	)
-	assert.Equal(http.StatusNotFound, signResponse.Code)
-}
-
-func TestGetDevice(t *testing.T) {
-	assert := require.New(t)
-
-	storage := persistence.NewMemoryStorage()
-	locker := lock.NewMemoryLocker[uuid.UUID]()
-	api := NewServer(storage, locker).mux()
-
-	device := createDevice(
-		assert,
-		api,
-		domain.SigningAlgorithmRsa,
-	)
-
+	// Verify that the signature counter was incremented correctly
+	// This is the key test for concurrency safety - the counter should be exactly 25
 	var out TypedResponse[GetDeviceOutputDto]
-	getResponse := makeRequest(
+	deviceResponse := makeRequest(
 		assert,
 		nil,
 		http.MethodGet,
@@ -430,14 +421,100 @@ func TestGetDevice(t *testing.T) {
 		api,
 		&out,
 	)
-	assert.Equal(http.StatusOK, getResponse.Code)
+	assert.Equal(http.StatusOK, deviceResponse.Code)
 
-	assert.Len(out.Data.PublicKeys, 1)
-	assert.Equal(device.PublicKeys, out.Data.PublicKeys)
-	assert.Equal(device.Label, out.Data.Label)
-	assert.Equal(device.SigningAlgorithm, out.Data.SigningAlgorithm)
+	assert.Equal(25, out.Data.SignatureCounter) // Must be exactly 25, not less due to race conditions
 }
 
+// TestSignBadRequest verifies that invalid signing requests are rejected
+// This test ensures proper input validation for the signing endpoint
+func TestSignBadRequest(t *testing.T) {
+	assert := require.New(t)
+
+	storage := persistence.NewMemoryStorage()
+	locker := lock.NewMemoryLocker[uuid.UUID]()
+	api := NewServer(storage, locker).mux()
+
+	// Attempt to sign with an invalid UUID format
+	var out ErrorResponse
+	signResponse := makeRequest(
+		assert,
+		PutDeviceSignInputDto{
+			Data: "foo",
+		},
+		http.MethodPut,
+		"/api/v0/device/invalid-uuid/sign", // Invalid UUID format
+		api,
+		&out,
+	)
+
+	// Should return 400 Bad Request due to invalid UUID format
+	assert.Equal(http.StatusBadRequest, signResponse.Code)
+}
+
+// TestSignNotFound verifies that signing with non-existent device returns 404
+// This test ensures proper error handling when attempting to use a device that doesn't exist
+func TestSignNotFound(t *testing.T) {
+	assert := require.New(t)
+
+	storage := persistence.NewMemoryStorage()
+	locker := lock.NewMemoryLocker[uuid.UUID]()
+	api := NewServer(storage, locker).mux()
+
+	// Attempt to sign with a valid UUID format but non-existent device
+	var out ErrorResponse
+	signResponse := makeRequest(
+		assert,
+		PutDeviceSignInputDto{
+			Data: "bar",
+		},
+		http.MethodPut,
+		"/api/v0/device/993d8948-cb1b-4ce8-98f8-f8b866578faf/sign", // Valid UUID but device doesn't exist
+		api,
+		&out,
+	)
+
+	// Should return 404 Not Found because the device doesn't exist in storage
+	assert.Equal(http.StatusNotFound, signResponse.Code)
+}
+
+// TestGetDevice verifies that retrieving a device returns correct information
+// This test ensures the GET endpoint returns complete and accurate device data
+func TestGetDevice(t *testing.T) {
+	assert := require.New(t)
+
+	storage := persistence.NewMemoryStorage()
+	locker := lock.NewMemoryLocker[uuid.UUID]()
+	api := NewServer(storage, locker).mux()
+
+	// Create a test device to retrieve
+	device := createDevice(
+		assert,
+		api,
+		domain.SigningAlgorithmRsa,
+	)
+
+	// Retrieve the device using its ID
+	var out TypedResponse[GetDeviceOutputDto]
+	getResponse := makeRequest(
+		assert,
+		nil, // No request body for GET
+		http.MethodGet,
+		fmt.Sprintf("/api/v0/device/%s", device.Id),
+		api,
+		&out,
+	)
+	assert.Equal(http.StatusOK, getResponse.Code)
+
+	// Verify all returned data matches what was created
+	assert.Len(out.Data.PublicKeys, 1)                               // Should have exactly one public key
+	assert.Equal(device.PublicKeys, out.Data.PublicKeys)             // Public keys should match
+	assert.Equal(device.Label, out.Data.Label)                       // Labels should match
+	assert.Equal(device.SigningAlgorithm, out.Data.SigningAlgorithm) // Algorithms should match
+}
+
+// TestListDevice verifies that listing devices returns all created devices
+// This test ensures the list endpoint returns all devices in the correct order
 func TestListDevice(t *testing.T) {
 	assert := require.New(t)
 
@@ -445,6 +522,7 @@ func TestListDevice(t *testing.T) {
 	locker := lock.NewMemoryLocker[uuid.UUID]()
 	api := NewServer(storage, locker).mux()
 
+	// Create multiple devices with different signing algorithms
 	device1 := createDevice(
 		assert,
 		api,
@@ -461,10 +539,11 @@ func TestListDevice(t *testing.T) {
 		domain.SigningAlgorithmRsa,
 	)
 
+	// Retrieve the list of all devices
 	var out TypedResponse[ListDeviceOutputDto]
 	listResponse := makeRequest(
 		assert,
-		nil,
+		nil, // No request body for GET
 		http.MethodGet,
 		"/api/v0/device",
 		api,
@@ -472,13 +551,16 @@ func TestListDevice(t *testing.T) {
 	)
 	assert.Equal(http.StatusOK, listResponse.Code)
 
+	// Verify all devices are returned in creation order
 	items := out.Data.Items
-	assert.Len(items, 3)
-	assert.Equal(device1.Id, items[0].Id)
-	assert.Equal(device2.Id, items[1].Id)
-	assert.Equal(device3.Id, items[2].Id)
+	assert.Len(items, 3)                  // Should have exactly 3 devices
+	assert.Equal(device1.Id, items[0].Id) // First device created
+	assert.Equal(device2.Id, items[1].Id) // Second device created
+	assert.Equal(device3.Id, items[2].Id) // Third device created
 }
 
+// TestDeleteDevice verifies that deleting devices works correctly
+// This test covers both deleting non-existent devices and actual device deletion
 func TestDeleteDevice(t *testing.T) {
 	assert := require.New(t)
 
@@ -486,36 +568,42 @@ func TestDeleteDevice(t *testing.T) {
 	locker := lock.NewMemoryLocker[uuid.UUID]()
 	api := NewServer(storage, locker).mux()
 
+	// Test case 1: Delete a non-existent device
+	// Should return 200 OK (idempotent operation)
 	{
 		deleteResponse := makeRequest(
 			assert,
-			nil,
+			nil, // No request body for DELETE
 			http.MethodDelete,
-			"/api/v0/device/993d8948-cb1b-4ce8-98f8-f8b866578faf",
+			"/api/v0/device/993d8948-cb1b-4ce8-98f8-f8b866578faf", // Valid UUID but device doesn't exist
 			api,
 			nil,
 		)
-		assert.Equal(http.StatusOK, deleteResponse.Code)
+		assert.Equal(http.StatusOK, deleteResponse.Code) // Deletion is idempotent
 	}
 
+	// Test case 2: Create and then delete an actual device
 	device := createDevice(
 		assert,
 		api,
 		domain.SigningAlgorithmRsa,
 	)
 
+	// Delete the created device
 	{
 		deleteResponse := makeRequest(
 			assert,
-			nil,
+			nil, // No request body for DELETE
 			http.MethodDelete,
 			fmt.Sprintf("/api/v0/device/%s", device.Id),
 			api,
 			nil,
 		)
-		assert.Equal(http.StatusOK, deleteResponse.Code)
+		assert.Equal(http.StatusOK, deleteResponse.Code) // Should succeed
 	}
 
+	// Test case 3: Verify the device is actually deleted
+	// Attempting to get the deleted device should return 404
 	var out TypedResponse[GetDeviceOutputDto]
 	getResponse := makeRequest(
 		assert,
@@ -525,5 +613,5 @@ func TestDeleteDevice(t *testing.T) {
 		api,
 		&out,
 	)
-	assert.Equal(http.StatusNotFound, getResponse.Code)
+	assert.Equal(http.StatusNotFound, getResponse.Code) // Device should no longer exist
 }

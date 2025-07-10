@@ -32,9 +32,11 @@ func NewServer(
 	}
 }
 
+// mux creates and configures the HTTP request multiplexer with all routes and middleware
 func (s *Server) mux() http.Handler {
 	mux := chi.NewMux()
 
+	// Add logging middleware to track all incoming requests
 	mux.Use(func(handler http.Handler) http.Handler {
 		return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 			slog.Info("incoming request", "method", request.Method, "url", request.URL)
@@ -42,15 +44,17 @@ func (s *Server) mux() http.Handler {
 		})
 	})
 
+	// Health check endpoint
 	mux.Handle("/api/v0/health", http.HandlerFunc(s.Health))
 
 	// TODO: register further HandlerFuncs here ...
 
-	mux.Post("/api/v0/device", s.device.Post)
-	mux.Get("/api/v0/device", s.device.List)
-	mux.Get("/api/v0/device/{id}", s.device.Get)
-	mux.Delete("/api/v0/device/{id}", s.device.Delete)
-	mux.Put("/api/v0/device/{id}/sign", s.device.Sign)
+	// Device management endpoints
+	mux.Post("/api/v0/device", s.device.Post)        // Create a new device
+	mux.Get("/api/v0/device", s.device.List)         // List all devices
+	mux.Get("/api/v0/device/{id}", s.device.Get)     // Get a specific device
+	mux.Delete("/api/v0/device/{id}", s.device.Delete) // Delete a device
+	mux.Put("/api/v0/device/{id}/sign", s.device.Sign) // Sign data with a device
 	return mux
 }
 

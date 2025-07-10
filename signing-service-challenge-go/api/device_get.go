@@ -30,7 +30,7 @@ func (d *DeviceHandler) Get(w http.ResponseWriter, r *http.Request) {
 		Id:               device.Id.String(),
 		SigningAlgorithm: device.SigningAlgorithm,
 		PublicKeys:       device.PublicKeys,
-		SignCounter:      device.SignatureCounter,
+		SignatureCounter: device.SignatureCounter,
 	}
 	if device.Label.Valid {
 		out.Label = null.New(device.Label.V)
@@ -44,5 +44,5 @@ type GetDeviceOutputDto struct {
 	SigningAlgorithm domain.SigningAlgorithm `json:"signing_algorithm"`
 	Label            null.Null[string]       `json:"label,omitzero"`
 	PublicKeys       []string                `json:"public_keys"`
-	SignCounter      int                     `json:"sign_counter"`
+	SignatureCounter int                     `json:"signature_counter"`
 }

@@ -21,7 +21,7 @@ func (d *DeviceHandler) List(w http.ResponseWriter, r *http.Request) {
 			Id:               device.Id.String(),
 			SigningAlgorithm: device.SigningAlgorithm,
 			PublicKeys:       device.PublicKeys,
-			SignCounter:      device.SignatureCounter,
+			SignatureCounter: device.SignatureCounter,
 		}
 		if device.Label.Valid {
 			singleDevice.Label = null.New(device.Label.V)
