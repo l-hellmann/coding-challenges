@@ -357,16 +357,85 @@ func TestSignConcurrent(t *testing.T) {
 	assert := require.New(t)
 
 	storage := persistence.NewMemoryStorage()
-	locker := lock.NewMemoryLocker[uuid.UUID]() // Memory-based locking for concurrency control
+	locker := lock.NewMemoryLocker[uuid.UUID]()
 	api := NewServer(storage, locker).mux()
 
 	// Create a test device with ECC signing algorithm
-	device := createDevice(
+	device1 := createDevice(
 		assert,
 		api,
 		domain.SigningAlgorithmEcc,
 	)
 
+	device2 := createDevice(
+		assert,
+		api,
+		domain.SigningAlgorithmRsa,
+	)
+
+	wg := &sync.WaitGroup{}
+	wg.Add(runs * 2)
+	go runConcurrentForDevice(
+		assert,
+		runs,
+		api,
+		device1,
+		wg,
+	)
+
+	go runConcurrentForDevice(
+		assert,
+		runs,
+		api,
+		device2,
+		wg,
+	)
+
+	// Wait for all goroutines to complete
+	wg.Wait()
+
+	{
+		// Verify that the signature counter was incremented correctly
+		// This is the key test for concurrency safety - the counter should be exactly 25
+		var out TypedResponse[GetDeviceOutputDto]
+		deviceResponse := makeRequest(
+			assert,
+			nil,
+			http.MethodGet,
+			fmt.Sprintf("/api/v0/device/%s", device1.Id),
+			api,
+			&out,
+		)
+		assert.Equal(http.StatusOK, deviceResponse.Code)
+
+		assert.Equal(25, out.Data.SignatureCounter) // Must be exactly 25, not less due to race conditions
+	}
+
+	{
+		// Verify that the signature counter was incremented correctly
+		// This is the key test for concurrency safety - the counter should be exactly 25
+		var out TypedResponse[GetDeviceOutputDto]
+		deviceResponse := makeRequest(
+			assert,
+			nil,
+			http.MethodGet,
+			fmt.Sprintf("/api/v0/device/%s", device2.Id),
+			api,
+			&out,
+		)
+		assert.Equal(http.StatusOK, deviceResponse.Code)
+
+		assert.Equal(25, out.Data.SignatureCounter) // Must be exactly 25, not less due to race conditions
+	}
+}
+
+func runConcurrentForDevice(
+	assert *require.Assertions,
+	runs int,
+	api http.Handler,
+	device PostDeviceOutputDto,
+	wg *sync.WaitGroup,
+) {
 	// Helper function to generate random data for each signing operation
 	// This ensures each goroutine signs different data
 	generateData := func() string {
@@ -378,8 +447,6 @@ func TestSignConcurrent(t *testing.T) {
 	}
 
 	// Launch multiple goroutines to perform concurrent signing operations
-	wg := sync.WaitGroup{}
-	wg.Add(runs)
 	for i := 0; i < runs; i++ {
 		go func() {
 			defer wg.Done()
@@ -406,24 +473,6 @@ func TestSignConcurrent(t *testing.T) {
 			)
 		}()
 	}
-
-	// Wait for all goroutines to complete
-	wg.Wait()
-
-	// Verify that the signature counter was incremented correctly
-	// This is the key test for concurrency safety - the counter should be exactly 25
-	var out TypedResponse[GetDeviceOutputDto]
-	deviceResponse := makeRequest(
-		assert,
-		nil,
-		http.MethodGet,
-		fmt.Sprintf("/api/v0/device/%s", device.Id),
-		api,
-		&out,
-	)
-	assert.Equal(http.StatusOK, deviceResponse.Code)
-
-	assert.Equal(25, out.Data.SignatureCounter) // Must be exactly 25, not less due to race conditions
 }
 
 // TestSignBadRequest verifies that invalid signing requests are rejected

@@ -43,6 +43,7 @@ func (m *memoryLocker[I]) Acquire(ctx context.Context, id I) (Lock, error) {
 
 		// Step 5: Create new lock with cleanup function
 		l = &lock{
+			wait: make(chan struct{}), // Channel that will be closed when lock is released
 			remove: func() {
 				m.mu.Lock()
 				defer m.mu.Unlock()
