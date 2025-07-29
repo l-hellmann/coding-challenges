@@ -104,8 +104,8 @@ func validateSignature(
 	signature, err := base64.StdEncoding.DecodeString(signDto.Signature)
 	assert.NoError(err)
 
-	assert.GreaterOrEqual(len(device.PublicKeys), 1)
-	block, rest := pem.Decode([]byte(device.PublicKeys[0]))
+	assert.GreaterOrEqual(len(device.PublicKey), 1)
+	block, rest := pem.Decode([]byte(device.PublicKey))
 	assert.Len(rest, 0)
 
 	switch device.SigningAlgorithm {
@@ -155,7 +155,7 @@ func TestPostDevice(t *testing.T) {
 	assert.Equal(out.Data.SigningAlgorithm, domain.SigningAlgorithmRsa)
 	assert.True(out.Data.Label.Filled())
 	assert.Equal(out.Data.Label.Some(), "fooSigner")
-	assert.Greater(len(out.Data.PublicKeys), 0)
+	assert.Greater(len(out.Data.PublicKey), 0)
 }
 
 // TestPostDeviceBadRequest verifies that invalid device creation requests are rejected
@@ -556,8 +556,7 @@ func TestGetDevice(t *testing.T) {
 	assert.Equal(http.StatusOK, getResponse.Code)
 
 	// Verify all returned data matches what was created
-	assert.Len(out.Data.PublicKeys, 1)                               // Should have exactly one public key
-	assert.Equal(device.PublicKeys, out.Data.PublicKeys)             // Public keys should match
+	assert.Equal(device.PublicKey, out.Data.PublicKey)               // Public keys should match
 	assert.Equal(device.Label, out.Data.Label)                       // Labels should match
 	assert.Equal(device.SigningAlgorithm, out.Data.SigningAlgorithm) // Algorithms should match
 }

@@ -19,11 +19,9 @@ func New(code int, message string, additional ...string) error {
 func (e Error) Error() string {
 	return strings.Join(e.messages, "\n")
 }
-
 func (e Error) Code() int {
 	return e.code
 }
-
 func (e Error) Messages() []string {
 	return e.messages
 }

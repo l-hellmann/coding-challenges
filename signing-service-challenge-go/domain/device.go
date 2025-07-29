@@ -37,15 +37,15 @@ const (
 
 // Device represents a cryptographic signing device with its associated keys and metadata
 type Device struct {
-	Id               uuid.UUID         // Unique identifier for the device
-	Label            sql.Null[string]  // Optional human-readable label
-	SigningAlgorithm SigningAlgorithm  // Cryptographic algorithm used for signing
-	PrivateKey       string            // Private key in PEM format
-	PublicKeys       []string          // Public keys in PEM format
-	SignatureCounter int               // Number of signatures created with this device
-	LastSignature    sql.Null[string]  // Most recent signature created
-	CreatedAt        time.Time         // Device creation timestamp
-	UpdatedAt        time.Time         // Last modification timestamp
+	Id               uuid.UUID        // Unique identifier for the device
+	Label            sql.Null[string] // Optional human-readable label
+	SigningAlgorithm SigningAlgorithm // Cryptographic algorithm used for signing
+	PrivateKey       string           // Private key in PEM format
+	PublicKey        string           // Public key in PEM format
+	SignatureCounter int              // Number of signatures created with this device
+	LastSignature    sql.Null[string] // Most recent signature created
+	CreatedAt        time.Time        // Device creation timestamp
+	UpdatedAt        time.Time        // Last modification timestamp
 }
 
 // Copy creates a deep copy of the device to prevent unintended mutations
@@ -57,7 +57,6 @@ func (d *Device) Copy() *Device {
 
 	// manual clone of uuid to ensure complete independence
 	newDevice.Id = uuid.UUID(slices.Clone(d.Id[:]))
-	newDevice.PublicKeys = slices.Clone(d.PublicKeys)
 	return newDevice
 }
 

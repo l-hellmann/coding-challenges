@@ -20,7 +20,7 @@ func (d *DeviceHandler) List(w http.ResponseWriter, r *http.Request) {
 		singleDevice := GetDeviceOutputDto{
 			Id:               device.Id.String(),
 			SigningAlgorithm: device.SigningAlgorithm,
-			PublicKeys:       device.PublicKeys,
+			PublicKey:        device.PublicKey,
 			SignatureCounter: device.SignatureCounter,
 		}
 		if device.Label.Valid {

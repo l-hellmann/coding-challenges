@@ -52,7 +52,7 @@ func (d *DeviceHandler) Post(w http.ResponseWriter, r *http.Request) {
 	out := PostDeviceOutputDto{
 		Id:               newDevice.Id.String(),
 		SigningAlgorithm: newDevice.SigningAlgorithm,
-		PublicKeys:       newDevice.PublicKeys,
+		PublicKey:        newDevice.PublicKey,
 	}
 	if newDevice.Label.Valid {
 		out.Label = null.New(newDevice.Label.V)
@@ -65,5 +65,5 @@ type PostDeviceOutputDto struct {
 	Id               string                  `json:"id"`
 	SigningAlgorithm domain.SigningAlgorithm `json:"signing_algorithm"`
 	Label            null.Null[string]       `json:"label,omitzero"`
-	PublicKeys       []string                `json:"public_keys"`
+	PublicKey        string                  `json:"public_key"`
 }

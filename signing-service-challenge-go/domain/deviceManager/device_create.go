@@ -82,7 +82,7 @@ func (h *Handler) CreateDevice(ctx context.Context, in NewDevice) (*domain.Devic
 
 	newDevice.Label = in.Label.SqlNull()
 	newDevice.PrivateKey = string(privateKeyBytes)
-	newDevice.PublicKeys = []string{string(publicKeyBytes)}
+	newDevice.PublicKey = string(publicKeyBytes)
 
 	if err := deviceRepository.Create(ctx, newDevice); err != nil {
 		slog.Error("creating device failed", "error", err)

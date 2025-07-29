@@ -50,9 +50,9 @@ func (s *Server) mux() http.Handler {
 	// TODO: register further HandlerFuncs here ...
 
 	// Device management endpoints
-	mux.Post("/api/v0/device", s.device.Post)        // Create a new device
-	mux.Get("/api/v0/device", s.device.List)         // List all devices
-	mux.Get("/api/v0/device/{id}", s.device.Get)     // Get a specific device
+	mux.Post("/api/v0/device", s.device.Post)          // Create a new device
+	mux.Get("/api/v0/device", s.device.List)           // List all devices
+	mux.Get("/api/v0/device/{id}", s.device.Get)       // Get a specific device
 	mux.Delete("/api/v0/device/{id}", s.device.Delete) // Delete a device
 	mux.Put("/api/v0/device/{id}/sign", s.device.Sign) // Sign data with a device
 	return mux
